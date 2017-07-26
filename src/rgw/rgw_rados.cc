@@ -5858,7 +5858,7 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
 {
   RGWObjectCtx *rctx = static_cast<RGWObjectCtx *>(ctx);
   ObjectReadOperation op;
-  struct get_obj_data *d = (struct get_obj_data *)arg;
+  //struct get_obj_data *d = (struct get_obj_data *)arg;
   string oid, key;
   rgw_bucket bucket;
   bufferlist *pbl;
@@ -5876,15 +5876,15 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
         obj_ofs < astate->data.length()) {
       unsigned chunk_len = min((uint64_t)astate->data.length() - obj_ofs, (uint64_t)len);
 
-      d->data_lock.Lock();
-      r = d->client_cb->handle_data(astate->data, obj_ofs, chunk_len);
-      d->data_lock.Unlock();
+      //d->data_lock.Lock();
+      //r = d->client_cb->handle_data(astate->data, obj_ofs, chunk_len);
+      //d->data_lock.Unlock();
       if (r < 0)
         return r;
 
-      d->lock.Lock();
-      d->total_read += chunk_len;
-      d->lock.Unlock();
+      //d->lock.Lock();
+      //d->total_read += chunk_len;
+      //d->lock.Unlock();
 	
       len -= chunk_len;
       read_ofs += chunk_len;
@@ -5896,38 +5896,44 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
 
   get_obj_bucket_and_oid_loc(obj, bucket, oid, key);
 
-  d->throttle.get(len);
-  if (d->is_cancelled()) {
-    return d->get_err_code();
-  }
+  //d->throttle.get(len);
+  //if (d->is_cancelled()) {
+    //return d->get_err_code();
+  //}
 
   /* add io after we check that we're not cancelled, otherwise we're going to have trouble
    * cleaning up
    */
-  d->add_io(obj_ofs, len, &pbl, &c);
+  //d->add_io(obj_ofs, len, &pbl, &c);
 
-  ldout(cct, 20) << "rados->get_obj_iterate_cb oid=" << oid << " obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
-  op.read(read_ofs, len, pbl, NULL);
+  //ldout(cct, 20) << "rados->get_obj_iterate_cb oid=" << oid << " obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
 
-  librados::IoCtx io_ctx(d->io_ctx);
+  uint64_t psize;
+  time_t pmtime;
+  //op.read(read_ofs, len, pbl, NULL);
+  op.stat(&psize, &pmtime, NULL);
+
+  librados::IoCtx io_ctx(((struct get_obj_data *)arg)->io_ctx);
   io_ctx.locator_set_key(key);
 
-  r = io_ctx.aio_operate(oid, c, &op, NULL);
-  ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << pbl->length() << dendl;
+  //r = io_ctx.aio_operate(oid, c, &op, NULL);
+  r = io_ctx.stat(oid, &psize, &pmtime);
+  pbl = NULL;
+  //ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << pbl->length() << dendl;
   if (r < 0)
     goto done_err;
 
   // Flush data to client if there is any
-  r = flush_read_list(d);
+  //r = flush_read_list(d);
   if (r < 0)
     return r;
 
   return 0;
 
 done_err:
-  ldout(cct, 20) << "cancelling io r=" << r << " obj_ofs=" << obj_ofs << dendl;
-  d->set_cancelled(r);
-  d->cancel_io(obj_ofs);
+  //ldout(cct, 20) << "cancelling io r=" << r << " obj_ofs=" << obj_ofs << dendl;
+  //d->set_cancelled(r);
+  //d->cancel_io(obj_ofs);
 
   return r;
 }
@@ -5948,10 +5954,10 @@ int RGWRados::Object::Read::iterate(int64_t ofs, int64_t end, RGWGetDataCB *cb)
 
   int r = store->iterate_obj(obj_ctx, state.obj, ofs, end, cct->_conf->rgw_get_obj_max_req_size, _get_obj_iterate_cb, (void *)data);
   if (r < 0) {
-    data->cancel_all_io();
+    //data->cancel_all_io();
     goto done;
   }
-
+  /*
   while (!done) {
     r = data->wait_next_io(&done);
     if (r < 0) {
@@ -5966,9 +5972,9 @@ int RGWRados::Object::Read::iterate(int64_t ofs, int64_t end, RGWGetDataCB *cb)
       break;
     }
   }
-
+  */
 done:
-  data->put();
+  //data->put();
   return r;
 }
 

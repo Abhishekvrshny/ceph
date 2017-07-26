@@ -437,7 +437,7 @@ static int rgw_build_policies(RGWRados *store, struct req_state *s, bool only_bu
     rgw_obj obj(s->bucket, s->object);
     store->set_atomic(s->obj_ctx, obj);
     if (prefetch_data) {
-      store->set_prefetch_data(s->obj_ctx, obj);
+      //store->set_prefetch_data(s->obj_ctx, obj);
     }
     ret = read_policy(store, s, s->bucket_info, s->bucket_attrs, s->object_acl, s->bucket, s->object);
   }
@@ -457,8 +457,8 @@ int RGWGetObj::verify_permission()
 {
   obj = rgw_obj(s->bucket, s->object);
   store->set_atomic(s->obj_ctx, obj);
-  if (get_data)
-    store->set_prefetch_data(s->obj_ctx, obj);
+  if (get_data) {}
+    //store->set_prefetch_data(s->obj_ctx, obj);
 
   if (!verify_object_permission(s, RGW_PERM_READ))
     return -EACCES;
@@ -679,7 +679,7 @@ int RGWGetObj::read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAc
   ldout(s->cct, 20) << "reading obj=" << part << " ofs=" << cur_ofs << " end=" << cur_end << dendl;
 
   obj_ctx.set_atomic(part);
-  store->set_prefetch_data(&obj_ctx, part);
+  //store->set_prefetch_data(&obj_ctx, part);
 
   RGWRados::Object op_target(store, s->bucket_info, obj_ctx, part);
   RGWRados::Object::Read read_op(&op_target);
@@ -719,7 +719,7 @@ int RGWGetObj::read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAc
     ret = 0;
     perfcounter->tinc(l_rgw_get_lat,
                       (ceph_clock_now(s->cct) - start_time));
-    send_response_data(bl, 0, len);
+    //send_response_data(bl, 0, len);
 
     start_time = ceph_clock_now(s->cct);
   }
@@ -949,16 +949,9 @@ void RGWGetObj::execute()
   perfcounter->inc(l_rgw_get_b, end - ofs);
 
   ret = read_op.iterate(ofs, end, &cb);
-
-  perfcounter->tinc(l_rgw_get_lat,
-                   (ceph_clock_now(s->cct) - start_time));
-  get_lat_centile->insert(*read_op.params.obj_size, (ceph_clock_now(s->cct) - start_time).to_msec());
-  if (ret < 0) {
-    goto done_err;
-  }
-
 done_err:
   send_response_data(bl, 0, 0);
+  return;
 }
 
 int RGWGetObj::init_common()
