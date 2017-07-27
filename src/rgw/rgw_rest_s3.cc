@@ -80,8 +80,8 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs, off_
   map<string, string>::iterator riter;
   bufferlist metadata_bl;
 
-  if (ret)
-    goto done;
+  //if (!ret) 
+  goto done;
 
   if (sent_header)
     goto send_data;
@@ -164,7 +164,7 @@ done:
   dump_errno(s);
 
   for (riter = response_attrs.begin(); riter != response_attrs.end(); ++riter) {
-    s->cio->print("%s: %s\r\n", riter->first.c_str(), riter->second.c_str());
+    //s->cio->print("%s: %s\r\n", riter->first.c_str(), riter->second.c_str());
   }
 
   if (!content_type)
@@ -178,11 +178,13 @@ done:
   sent_header = true;
 
 send_data:
+  /*
   if (get_data && !ret) {
     int r = s->cio->write(bl.c_str() + bl_ofs, bl_len);
     if (r < 0)
       return r;
   }
+  */
 
   return 0;
 }
