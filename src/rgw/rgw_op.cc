@@ -5276,156 +5276,192 @@ void RGWCompleteMultipart::execute()
   meta_obj.set_in_extra_data(true);
   meta_obj.index_hash_source = s->object.name;
 
-  op_ret = get_obj_attrs(store, s, meta_obj, attrs);
+  rgw_pool meta_pool;
+  rgw_obj obj;
+  rgw_raw_obj raw_obj;
+  librados::IoCtx ioctx;
+  rados::cls::lock::Lock l("RGWCompleteMultipart");
 
-  if (op_ret < 0) {
-    ldout(s->cct, 0) << "ERROR: failed to get obj attrs, obj=" << meta_obj
-		     << " ret=" << op_ret << dendl;
-    return;
-  }
+  int max_lock_secs_mp = s->cct->_conf->rgw_mp_lock_max_time;
+  obj.init_ns((s->bucket_info).bucket, meta_oid, RGW_OBJ_NS_MULTIPART);
+  obj.set_in_extra_data(true);
+  store->obj_to_raw((s->bucket_info).placement_rule, robj, &raw_obj);
+  store->get_obj_data_pool((s->bucket_info).placement_rule, meta_obj, &meta_pool);
+  store->open_pool_ctx(meta_pool, ioctx);
+  utime_t time(max_lock_secs_mp, 0);
+  l.set_duration(time);
+  const string raw_meta_oid = raw_obj.oid;
 
   do {
-    op_ret = list_multipart_parts(store, s, upload_id, meta_oid, max_parts,
-				  marker, obj_parts, &marker, &truncated);
-    if (op_ret == -ENOENT) {
-      op_ret = -ERR_NO_SUCH_UPLOAD;
-    }
-    if (op_ret < 0)
-      return;
+    op_ret = l.lock_exclusive(&ioctx, raw_meta_oid);
 
-    total_parts += obj_parts.size();
-    if (!truncated && total_parts != (int)parts->parts.size()) {
-      ldout(s->cct, 0) << "NOTICE: total parts mismatch: have: " << total_parts
-		       << " expected: " << parts->parts.size() << dendl;
-      op_ret = -ERR_INVALID_PART;
+    if (op_ret == -EBUSY) {
+      dout(0) << "RGWCompleteMultipart::execute() failed to acquire lock on, sleep 5, try again"  << dendl;
+      sleep(5);
+      continue;
+    }
+    if (op_ret < 0) {
+      dout(0) << "RGWCompleteMultipart::execute() failed to acquire lock " << dendl;
       return;
     }
 
-    for (obj_iter = obj_parts.begin(); iter != parts->parts.end() && obj_iter != obj_parts.end(); ++iter, ++obj_iter, ++handled_parts) {
-      uint64_t part_size = obj_iter->second.accounted_size;
-      if (handled_parts < (int)parts->parts.size() - 1 &&
-          part_size < min_part_size) {
-        op_ret = -ERR_TOO_SMALL;
-        return;
-      }
+    op_ret = get_obj_attrs(store, s, meta_obj, attrs);
 
-      char petag[CEPH_CRYPTO_MD5_DIGESTSIZE];
-      if (iter->first != (int)obj_iter->first) {
-        ldout(s->cct, 0) << "NOTICE: parts num mismatch: next requested: "
-			 << iter->first << " next uploaded: "
-			 << obj_iter->first << dendl;
+    if (op_ret < 0) {
+      ldout(s->cct, 0) << "ERROR: failed to get obj attrs, obj=" << meta_obj
+           << " ret=" << op_ret << dendl;
+      return;
+    }
+
+    do {
+      op_ret = list_multipart_parts(store, s, upload_id, meta_oid, max_parts,
+          marker, obj_parts, &marker, &truncated);
+      if (op_ret == -ENOENT) {
+        op_ret = -ERR_NO_SUCH_UPLOAD;
+      }
+      if (op_ret < 0)
+        return;
+  
+      total_parts += obj_parts.size();
+      if (!truncated && total_parts != (int)parts->parts.size()) {
+        ldout(s->cct, 0) << "NOTICE: total parts mismatch: have: " << total_parts
+             << " expected: " << parts->parts.size() << dendl;
         op_ret = -ERR_INVALID_PART;
         return;
       }
-      string part_etag = rgw_string_unquote(iter->second);
-      if (part_etag.compare(obj_iter->second.etag) != 0) {
-        ldout(s->cct, 0) << "NOTICE: etag mismatch: part: " << iter->first
-			 << " etag: " << iter->second << dendl;
-        op_ret = -ERR_INVALID_PART;
-        return;
-      }
-
-      hex_to_buf(obj_iter->second.etag.c_str(), petag,
-		CEPH_CRYPTO_MD5_DIGESTSIZE);
-      hash.Update((const byte *)petag, sizeof(petag));
-
-      RGWUploadPartInfo& obj_part = obj_iter->second;
-
-      /* update manifest for part */
-      string oid = mp.get_part(obj_iter->second.num);
-      rgw_obj src_obj;
-      src_obj.init_ns(s->bucket, oid, mp_ns);
-
-      if (obj_part.manifest.empty()) {
-        ldout(s->cct, 0) << "ERROR: empty manifest for object part: obj="
-			 << src_obj << dendl;
-        op_ret = -ERR_INVALID_PART;
-        return;
-      } else {
-        manifest.append(obj_part.manifest, store);
-      }
-
-      if (obj_part.cs_info.compression_type != "none") {
-        if (compressed && cs_info.compression_type != obj_part.cs_info.compression_type) {
-          ldout(s->cct, 0) << "ERROR: compression type was changed during multipart upload ("
-                           << cs_info.compression_type << ">>" << obj_part.cs_info.compression_type << ")" << dendl;
+  
+      for (obj_iter = obj_parts.begin(); iter != parts->parts.end() && obj_iter != obj_parts.end(); ++iter, ++obj_iter, ++handled_parts) {
+        uint64_t part_size = obj_iter->second.accounted_size;
+        if (handled_parts < (int)parts->parts.size() - 1 &&
+            part_size < min_part_size) {
+          op_ret = -ERR_TOO_SMALL;
+          return;
+        }
+  
+        char petag[CEPH_CRYPTO_MD5_DIGESTSIZE];
+        if (iter->first != (int)obj_iter->first) {
+          ldout(s->cct, 0) << "NOTICE: parts num mismatch: next requested: "
+         << iter->first << " next uploaded: "
+         << obj_iter->first << dendl;
           op_ret = -ERR_INVALID_PART;
           return;
         }
-        int64_t new_ofs; // offset in compression data for new part
-        if (cs_info.blocks.size() > 0)
-          new_ofs = cs_info.blocks.back().new_ofs + cs_info.blocks.back().len;
-        else
-          new_ofs = 0;
-        for (const auto& block : obj_part.cs_info.blocks) {
-          compression_block cb;
-          cb.old_ofs = block.old_ofs + cs_info.orig_size;
-          cb.new_ofs = new_ofs;
-          cb.len = block.len;
-          cs_info.blocks.push_back(cb);
-          new_ofs = cb.new_ofs + cb.len;
-        } 
-        if (!compressed)
-          cs_info.compression_type = obj_part.cs_info.compression_type;
-        cs_info.orig_size += obj_part.cs_info.orig_size;
-        compressed = true;
+        string part_etag = rgw_string_unquote(iter->second);
+        if (part_etag.compare(obj_iter->second.etag) != 0) {
+          ldout(s->cct, 0) << "NOTICE: etag mismatch: part: " << iter->first
+        << " etag: " << iter->second << dendl;
+          op_ret = -ERR_INVALID_PART;
+          return;
+        }
+  
+        hex_to_buf(obj_iter->second.etag.c_str(), petag,
+      CEPH_CRYPTO_MD5_DIGESTSIZE);
+        hash.Update((const byte *)petag, sizeof(petag));
+  
+        RGWUploadPartInfo& obj_part = obj_iter->second;
+  
+        /* update manifest for part */
+        string oid = mp.get_part(obj_iter->second.num);
+        rgw_obj src_obj;
+        src_obj.init_ns(s->bucket, oid, mp_ns);
+  
+        if (obj_part.manifest.empty()) {
+          ldout(s->cct, 0) << "ERROR: empty manifest for object part: obj="
+         << src_obj << dendl;
+          op_ret = -ERR_INVALID_PART;
+          return;
+        } else {
+          manifest.append(obj_part.manifest, store);
+        }
+  
+        if (obj_part.cs_info.compression_type != "none") {
+          if (compressed && cs_info.compression_type != obj_part.cs_info.compression_type) {
+            ldout(s->cct, 0) << "ERROR: compression type was changed during multipart upload ("
+                             << cs_info.compression_type << ">>" << obj_part.cs_info.compression_type << ")" << dendl;
+            op_ret = -ERR_INVALID_PART;
+            return;
+          }
+          int64_t new_ofs; // offset in compression data for new part
+          if (cs_info.blocks.size() > 0)
+            new_ofs = cs_info.blocks.back().new_ofs + cs_info.blocks.back().len;
+          else
+            new_ofs = 0;
+          for (const auto& block : obj_part.cs_info.blocks) {
+            compression_block cb;
+            cb.old_ofs = block.old_ofs + cs_info.orig_size;
+            cb.new_ofs = new_ofs;
+            cb.len = block.len;
+            cs_info.blocks.push_back(cb);
+            new_ofs = cb.new_ofs + cb.len;
+          } 
+          if (!compressed)
+            cs_info.compression_type = obj_part.cs_info.compression_type;
+          cs_info.orig_size += obj_part.cs_info.orig_size;
+          compressed = true;
+        }
+  
+        rgw_obj_index_key remove_key;
+        src_obj.key.get_index_key(&remove_key);
+  
+        remove_objs.push_back(remove_key);
+  
+        ofs += obj_part.size;
+        accounted_size += obj_part.accounted_size;
       }
-
-      rgw_obj_index_key remove_key;
-      src_obj.key.get_index_key(&remove_key);
-
-      remove_objs.push_back(remove_key);
-
-      ofs += obj_part.size;
-      accounted_size += obj_part.accounted_size;
+    } while (truncated);
+    hash.Final((byte *)final_etag);
+  
+    buf_to_hex((unsigned char *)final_etag, sizeof(final_etag), final_etag_str);
+    snprintf(&final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2],  sizeof(final_etag_str) - CEPH_CRYPTO_MD5_DIGESTSIZE * 2,
+             "-%lld", (long long)parts->parts.size());
+    etag = final_etag_str;
+    ldout(s->cct, 10) << "calculated etag: " << final_etag_str << dendl;
+  
+    etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
+  
+    attrs[RGW_ATTR_ETAG] = etag_bl;
+  
+    if (compressed) {
+      // write compression attribute to full object
+      bufferlist tmp;
+      ::encode(cs_info, tmp);
+      attrs[RGW_ATTR_COMPRESSION] = tmp;
     }
-  } while (truncated);
-  hash.Final((byte *)final_etag);
+  
+    target_obj.init(s->bucket, s->object.name);
+    if (versioned_object) {
+      store->gen_rand_obj_instance_name(&target_obj);
+    }
+  
+    RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
+  
+    obj_ctx.obj.set_atomic(target_obj);
+  
+    RGWRados::Object op_target(store, s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), target_obj);
+    RGWRados::Object::Write obj_op(&op_target);
+  
+    obj_op.meta.manifest = &manifest;
+    obj_op.meta.remove_objs = &remove_objs;
+  
+    obj_op.meta.ptag = &s->req_id; /* use req_id as operation tag */
+    obj_op.meta.owner = s->owner.get_id();
+    obj_op.meta.flags = PUT_OBJ_CREATE;
+    op_ret = obj_op.write_meta(ofs, accounted_size, attrs);
+    if (op_ret < 0)
+      return;
+  
+    // remove the upload obj
+    int r = store->delete_obj(*static_cast<RGWObjectCtx *>(s->obj_ctx),
+            s->bucket_info, meta_obj, 0);
+    if (r < 0) {
+      ldout(store->ctx(), 0) << "WARNING: failed to remove object " << meta_obj << dendl;
+    }
+    break;
+  } while(1);
 
-  buf_to_hex((unsigned char *)final_etag, sizeof(final_etag), final_etag_str);
-  snprintf(&final_etag_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2],  sizeof(final_etag_str) - CEPH_CRYPTO_MD5_DIGESTSIZE * 2,
-           "-%lld", (long long)parts->parts.size());
-  etag = final_etag_str;
-  ldout(s->cct, 10) << "calculated etag: " << final_etag_str << dendl;
-
-  etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
-
-  attrs[RGW_ATTR_ETAG] = etag_bl;
-
-  if (compressed) {
-    // write compression attribute to full object
-    bufferlist tmp;
-    ::encode(cs_info, tmp);
-    attrs[RGW_ATTR_COMPRESSION] = tmp;
-  }
-
-  target_obj.init(s->bucket, s->object.name);
-  if (versioned_object) {
-    store->gen_rand_obj_instance_name(&target_obj);
-  }
-
-  RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
-
-  obj_ctx.obj.set_atomic(target_obj);
-
-  RGWRados::Object op_target(store, s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), target_obj);
-  RGWRados::Object::Write obj_op(&op_target);
-
-  obj_op.meta.manifest = &manifest;
-  obj_op.meta.remove_objs = &remove_objs;
-
-  obj_op.meta.ptag = &s->req_id; /* use req_id as operation tag */
-  obj_op.meta.owner = s->owner.get_id();
-  obj_op.meta.flags = PUT_OBJ_CREATE;
-  op_ret = obj_op.write_meta(ofs, accounted_size, attrs);
-  if (op_ret < 0)
-    return;
-
-  // remove the upload obj
-  int r = store->delete_obj(*static_cast<RGWObjectCtx *>(s->obj_ctx),
-			    s->bucket_info, meta_obj, 0);
+  r = l.unlock(&ioctx, raw_meta_oid);
   if (r < 0) {
-    ldout(store->ctx(), 0) << "WARNING: failed to remove object " << meta_obj << dendl;
+    ldout(store->ctx(), 0) << "WARNING: failed to unlock " << raw_meta_oid << dendl;
   }
 }
 
@@ -5433,8 +5469,8 @@ int RGWAbortMultipart::verify_permission()
 {
   if (s->iam_policy) {
     auto e = s->iam_policy->eval(s->env, *s->auth.identity,
-				 rgw::IAM::s3AbortMultipartUpload,
-				 rgw_obj(s->bucket, s->object));
+         rgw::IAM::s3AbortMultipartUpload,
+         rgw_obj(s->bucket, s->object));
     if (e == Effect::Allow) {
       return 0;
     } else if (e == Effect::Deny) {
