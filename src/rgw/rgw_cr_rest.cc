@@ -101,6 +101,21 @@ int RGWStreamRWHTTPResourceCRF::write(bufferlist& data)
   return 0;
 }
 
+int RGWStreamRWHTTPResourceCRF::drain_writes(bool *need_retry)
+{
+  reenter(&drain_state) {
+    *need_retry = true;
+    yield req->finish_write();
+    *need_retry = !req->is_done();
+    while (!req->is_done()) {
+      yield caller->io_block(0, req->get_io_id());
+      *need_retry = !req->is_done();
+    }
+    return req->get_req_retcode();
+  }
+  return 0;
+}
+
 TestCR::TestCR(CephContext *_cct, RGWHTTPManager *_mgr, RGWHTTPStreamRWRequest *_req) : RGWCoroutine(_cct), cct(_cct), http_manager(_mgr),
                                                                                         req(_req) {}
 TestCR::~TestCR() {
@@ -132,7 +147,6 @@ int TestCR::operate() {
       } while (need_retry);
 
       if (retcode < 0) {
-        dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
         return set_cr_error(ret);
       }
 
@@ -150,12 +164,20 @@ int TestCR::operate() {
       }
 
       if (retcode < 0) {
-        dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
         return set_cr_error(ret);
       }
 
       dout(0) << "wrote " << bl.length() << " bytes" << dendl;
     } while (true);
+
+    do {
+      yield {
+        int ret = crf->drain_writes(&need_retry);
+        if (ret < 0) {
+          return set_cr_error(ret);
+        }
+      }
+    } while (need_retry);
 
     return set_cr_done();
   }
@@ -203,7 +225,7 @@ int TestSpliceCR::operate() {
         }
 
         if (retcode < 0) {
-          dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
+          ldout(20) << __func__ << ": in_crf->read() retcode=" << retcode << dendl;
           return set_cr_error(ret);
         }
       } while (need_retry);
@@ -222,12 +244,21 @@ int TestSpliceCR::operate() {
       }
 
       if (retcode < 0) {
-        dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
+        ldout(20) << __func__ << ": out_crf->write() retcode=" << retcode << dendl;
         return set_cr_error(ret);
       }
 
       dout(0) << "wrote " << bl.length() << " bytes" << dendl;
     } while (true);
+
+    do {
+      yield {
+        int ret = out_crf->drain_writes(&need_retry);
+        if (ret < 0) {
+          return set_cr_error(ret);
+        }
+      }
+    } while (need_retry);
 
     return set_cr_done();
   }
