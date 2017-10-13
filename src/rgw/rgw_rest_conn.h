@@ -206,7 +206,7 @@ public:
     return req.get_http_status();
   }
 
-  int wait_bl(bufferlist *pbl) {
+  int wait(bufferlist *pbl) {
     int ret = req.wait();
     if (ret < 0) {
       return ret;
@@ -323,7 +323,7 @@ public:
     return req.get_http_status();
   }
 
-  int wait_bl(bufferlist *pbl) {
+  int wait(bufferlist *pbl) {
     int ret = req.wait();
     if (ret < 0) {
       return ret;
