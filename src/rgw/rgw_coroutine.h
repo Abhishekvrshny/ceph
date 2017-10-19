@@ -391,7 +391,7 @@ public:
     blocked_flag = flag;
   }
   bool is_io_blocked() {
-    return blocked_flag;
+    return blocked_flag && !done_flag;
   }
   void set_interval_wait(bool flag) {
     interval_wait_flag = flag;
