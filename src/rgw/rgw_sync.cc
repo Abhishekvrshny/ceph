@@ -481,7 +481,7 @@ public:
         http_op = new RGWRESTReadResource(conn, p, pairs, NULL,
                                           env->http_manager);
 
-        http_op->set_user_info((void *)stack);
+        init_new_io(http_op);
 
         int ret = http_op->aio_read();
         if (ret < 0) {
@@ -545,7 +545,7 @@ public:
     string p = "/admin/log/";
 
     http_op = new RGWRESTReadResource(conn, p, pairs, NULL, sync_env->http_manager);
-    http_op->set_user_info((void *)stack);
+    init_new_io(http_op);
 
     int ret = http_op->aio_read();
     if (ret < 0) {
@@ -1002,7 +1002,7 @@ public:
 
         http_op = new RGWRESTReadResource(conn, p, pairs, NULL, sync_env->http_manager);
 
-        http_op->set_user_info((void *)stack);
+        init_new_io(http_op);
 
         int ret = http_op->aio_read();
         if (ret < 0) {
@@ -2196,7 +2196,7 @@ int RGWCloneMetaLogCoroutine::state_read_shard_status()
         shard_info.last_update = header.max_time.to_real_time();
       }
       // wake up parent stack
-      stack->get_completion_mgr()->complete(nullptr, stack);
+      io_complete();
     }), add_ref);
 
   int ret = mdlog->get_info_async(shard_id, completion.get());
@@ -2240,7 +2240,7 @@ int RGWCloneMetaLogCoroutine::state_send_rest_request()
 
   http_op = new RGWRESTReadResource(conn, "/admin/log", pairs, NULL, sync_env->http_manager);
 
-  http_op->set_user_info((void *)stack);
+  init_new_io(http_op);
 
   int ret = http_op->aio_read();
   if (ret < 0) {
