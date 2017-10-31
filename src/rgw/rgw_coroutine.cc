@@ -62,6 +62,7 @@ void RGWCompletionManager::_complete(RGWAioCompletionNotifier *cn, int64_t io_id
     cns.erase(cn);
   }
 
+#warning shouldn't have more than one entry in complete_reqs per io_id
   complete_reqs.push_back(io_completion{io_id, user_info});
   cond.Signal();
 }
