@@ -655,6 +655,34 @@ int RGWRemoteDataLog::read_sync_status(rgw_data_sync_status *sync_status)
   return ret;
 }
 
+int RGWRemoteDataLog::read_recovering_shards(const int num_shards, set<int>& recovering_shards)
+{
+  // cannot run concurrently with run_sync(), so run in a separate manager
+  RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
+  RGWHTTPManager http_manager(store->ctx(), crs.get_completion_mgr());
+  int ret = http_manager.start();
+  if (ret < 0) {
+    ldout(store->ctx(), 0) << "failed in http_manager.set_threaded() ret=" << ret << dendl;
+    return ret;
+  }
+  RGWDataSyncEnv sync_env_local = sync_env;
+  sync_env_local.http_manager = &http_manager;
+  map<int, std::set<std::string>> entries_map;
+  uint64_t max_entries{1};
+  ret = crs.run(new RGWReadDataSyncRecoveringShardsCR(&sync_env_local, max_entries, num_shards, entries_map));
+  http_manager.stop();
+
+  if (ret == 0) {
+    for (const auto& entry : entries_map) {
+      if (entry.second.size() != 0) {
+        recovering_shards.insert(entry.first);
+      }
+    }
+  }
+
+  return ret;
+}
+
 int RGWRemoteDataLog::init_sync_status(int num_shards)
 {
   rgw_data_sync_status sync_status;
