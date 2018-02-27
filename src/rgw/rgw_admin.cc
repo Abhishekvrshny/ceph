@@ -2244,9 +2244,9 @@ static void parse_tier_config_param(const string& s, map<string, string, ltstr_n
     if (c == ',') {
       if (level == 0) {
         confs.push_back(cur_conf);
+        cur_conf.clear();
+        continue;
       }
-      cur_conf.clear();
-      continue;
     }
     if (c == '{') {
       ++level;
