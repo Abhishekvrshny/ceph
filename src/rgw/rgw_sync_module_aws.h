@@ -34,6 +34,7 @@ struct rgw_sync_aws_src_obj_properties {
   string etag;
   uint32_t zone_short_id{0};
   uint64_t pg_ver{0};
+  uint64_t versioned_epoch{0};
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
