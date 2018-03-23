@@ -3624,7 +3624,7 @@ void RGWPutObj::execute()
     op_ret = -ERR_UNPROCESSABLE_ENTITY;
     goto done;
   }
-  bl.append(etag.c_str(), etag.size() + 1);
+  bl.append(etag.c_str(), etag.size());
   emplace_attr(RGW_ATTR_ETAG, std::move(bl));
 
   populate_with_generic_attrs(s, attrs);
@@ -3692,7 +3692,7 @@ void RGWPostObj::pre_exec()
 {
   rgw_bucket_object_pre_exec(s);
 }
-
+GWPostObj
 void RGWPostObj::execute()
 {
   RGWPutObjDataProcessor *filter = nullptr;
@@ -3860,7 +3860,13 @@ void RGWPostObj::execute()
     buf_to_hex(m, CEPH_CRYPTO_MD5_DIGESTSIZE, calc_md5);
 
     etag = calc_md5;
-    bl.append(etag.c_str(), etag.size() + 1);
+    
+    if (supplied_md5_b64 && strcmp(calc_md5, supplied_md5)) {
+      op_ret = -ERR_BAD_DIGEST;
+      return;
+    }
+
+    bl.append(etag.c_str(), etag.size());
     emplace_attr(RGW_ATTR_ETAG, std::move(bl));
 
     policy.encode(aclbl);
@@ -5571,7 +5577,7 @@ void RGWCompleteMultipart::execute()
   etag = final_etag_str;
   ldout(s->cct, 10) << "calculated etag: " << final_etag_str << dendl;
 
-  etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
+  etag_bl.append(final_etag_str, strlen(final_etag_str));
 
   attrs[RGW_ATTR_ETAG] = etag_bl;
 
