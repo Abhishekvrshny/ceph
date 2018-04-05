@@ -1440,7 +1440,7 @@ int RGWGetObj_ObjStore_SWIFT::send_response_data(bufferlist& bl,
     } else {
       auto iter = attrs.find(RGW_ATTR_ETAG);
       if (iter != attrs.end()) {
-        dump_etag(s, iter->second);
+        dump_etag(s, iter->second.to_str());
       }
     }
 
