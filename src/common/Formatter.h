@@ -48,11 +48,11 @@ namespace ceph {
       }
     };
 
-    static Formatter *create(std::string_view type,
-			     std::string_view default_type,
-			     std::string_view fallback);
-    static Formatter *create(std::string_view type,
-			     std::string_view default_type) {
+    static Formatter *create(boost::string_view type,
+			     boost::string_view default_type,
+			     boost::string_view fallback);
+    static Formatter *create(boost::string_view type,
+			     boost::string_view default_type) {
       return create(type, default_type, "");
     }
     static Formatter *create(boost::string_view type) {
