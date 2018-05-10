@@ -3692,7 +3692,7 @@ void RGWPostObj::pre_exec()
 {
   rgw_bucket_object_pre_exec(s);
 }
-GWPostObj
+
 void RGWPostObj::execute()
 {
   RGWPutObjDataProcessor *filter = nullptr;
