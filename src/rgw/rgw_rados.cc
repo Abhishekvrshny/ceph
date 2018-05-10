@@ -7530,7 +7530,7 @@ int RGWRados::rewrite_obj(RGWBucketInfo& dest_bucket_info, rgw_obj& obj)
 					   max_chunk_size, NULL, mtime, attrset,
 					   RGW_OBJ_CATEGORY_MAIN, 0, real_time(),
 					   (obj.key.instance.empty() ? NULL : &(obj.key.instance)),
-					   NULL, NULL);
+					   NULL);
 }
 
 struct obj_time_weight {
@@ -8205,7 +8205,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   if (copy_data) { /* refcounting tail wouldn't work here, just copy the data */
     return copy_obj_data(obj_ctx, dest_bucket_info, read_op, obj_size - 1, dest_obj, src_obj,
                          max_chunk_size, mtime, real_time(), attrs, category, olh_epoch, delete_at,
-                         version_id, ptag, petag);
+                         version_id, petag);
   }
 
   RGWObjManifest::obj_iterator miter = astate->manifest.obj_begin();
