@@ -389,7 +389,8 @@ class RGWStreamReadHTTPResourceCRF : public RGWStreamReadResourceCRF {
 
   RGWHTTPStreamRWRequest *req{nullptr};
 
-  std::optional<RGWCRHTTPGetDataCB> in_cb;
+  //std::experimental::optional<RGWCRHTTPGetDataCB> in_cb;
+  RGWCRHTTPGetDataCB *in_cb{nullptr};
 
   bufferlist extra_data;
 

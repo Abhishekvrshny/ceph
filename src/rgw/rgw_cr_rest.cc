@@ -73,7 +73,8 @@ int RGWStreamReadHTTPResourceCRF::init()
 {
   env->stack->init_new_io(req);
 
-  in_cb.emplace(env, caller, req);
+  //in_cb.emplace(env, caller, req);
+  in_cb = new RGWCRHTTPGetDataCB(env, caller, req);
 
   int r = http_manager->add_request(req);
   if (r < 0) {
