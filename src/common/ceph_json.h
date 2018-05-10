@@ -497,21 +497,21 @@ struct JSONFormattable {
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
-    encode((uint8_t)type, bl);
-    encode(str, bl);
-    encode(arr, bl);
-    encode(obj, bl);
+    ::encode((uint8_t)type, bl);
+    ::encode(str, bl);
+    ::encode(arr, bl);
+    ::encode(obj, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::iterator& bl) {
     DECODE_START(1, bl);
     uint8_t t;
-    decode(t, bl);
+    ::decode(t, bl);
     type = (Type)t;
-    decode(str, bl);
-    decode(arr, bl);
-    decode(obj, bl);
+    ::decode(str, bl);
+    ::decode(arr, bl);
+    ::decode(obj, bl);
     DECODE_FINISH(bl);
   }
   const string& val() const {
